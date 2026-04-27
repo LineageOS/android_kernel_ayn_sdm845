@@ -1849,6 +1849,20 @@ error:
 	return rc;
 }
 
+#ifdef CONFIG_VENDOR_AYN_ODIN_M2
+static int screen_filp;
+static void dsi_set_flip(int status)
+{
+	screen_filp = status;
+	return ;
+}
+int dsi_get_flip(void)
+{
+	return screen_filp;
+}
+EXPORT_SYMBOL(dsi_get_flip);
+#endif
+
 static int dsi_panel_parse_phy_props(struct dsi_panel_phy_props *props,
 				     struct device_node *of_node,
 				     const char *name)
@@ -1893,6 +1907,9 @@ static int dsi_panel_parse_phy_props(struct dsi_panel_phy_props *props,
 		rc = -EINVAL;
 		goto error;
 	}
+#ifdef CONFIG_VENDOR_AYN_ODIN_M2
+	dsi_set_flip(props->rotation);
+#endif
 error:
 	return rc;
 }
