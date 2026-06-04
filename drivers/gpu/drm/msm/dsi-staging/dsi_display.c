@@ -5376,10 +5376,14 @@ int dsi_display_get_info(struct msm_display_info *info, void *disp)
 	for (i = 0; i < info->num_of_h_tiles; i++)
 		info->h_tile_instance[i] = display->ctrl[i].ctrl->cell_index;
 
-	info->is_connected = true;
-	info->is_primary = false;
-	if (!strcmp(display->display_type, "primary"))
-		info->is_primary = true;
+	info->is_primary = !strcmp(display->display_type, "primary");
+	if (info->is_primary) {
+		info->is_connected = true;
+	} else {
+		extern int default_display_connected;
+		info->is_connected = (default_display_connected == 1);
+		info->capabilities |= MSM_DISPLAY_CAP_HOT_PLUG;
+	}
 
 	info->width_mm = phy_props.panel_width_mm;
 	info->height_mm = phy_props.panel_height_mm;
