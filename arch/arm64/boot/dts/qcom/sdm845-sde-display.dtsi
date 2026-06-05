@@ -31,6 +31,8 @@
 #include "dsi-panel-nt36850-truly-dualmipi-wqhd-cmd.dtsi"
 #include "dsi-panel-test-dualmipi-oled-cmd.dtsi"
 #include <dt-bindings/clock/mdss-10nm-pll-clk.h>
+#include "dsi-panel-lt8912-1080p-dsi1-video.dtsi"
+#include "dsi-panel-innolux-td4328-1080p-cmd.dtsi"
 
 &soc {
 	dsi_panel_pwr_supply: dsi_panel_pwr_supply {
@@ -40,8 +42,8 @@
 		qcom,panel-supply-entry@0 {
 			reg = <0>;
 			qcom,supply-name = "vddio";
-			qcom,supply-min-voltage = <1800000>;
-			qcom,supply-max-voltage = <1800000>;
+			qcom,supply-min-voltage = <1850000>;
+			qcom,supply-max-voltage = <1850000>;
 			qcom,supply-enable-load = <62000>;
 			qcom,supply-disable-load = <80>;
 			qcom,supply-post-on-sleep = <20>;
@@ -74,8 +76,8 @@
 		qcom,panel-supply-entry@0 {
 			reg = <0>;
 			qcom,supply-name = "vddio";
-			qcom,supply-min-voltage = <1800000>;
-			qcom,supply-max-voltage = <1800000>;
+			qcom,supply-min-voltage = <1850000>;
+			qcom,supply-max-voltage = <1850000>;
 			qcom,supply-enable-load = <62000>;
 			qcom,supply-disable-load = <80>;
 			qcom,supply-post-on-sleep = <20>;
@@ -89,8 +91,8 @@
 		qcom,panel-supply-entry@0 {
 			reg = <0>;
 			qcom,supply-name = "vddio";
-			qcom,supply-min-voltage = <1800000>;
-			qcom,supply-max-voltage = <1800000>;
+			qcom,supply-min-voltage = <1850000>;
+			qcom,supply-max-voltage = <1850000>;
 			qcom,supply-enable-load = <62000>;
 			qcom,supply-disable-load = <80>;
 			qcom,supply-post-on-sleep = <20>;
@@ -527,7 +529,51 @@
 		ibb-supply = <&ibb_regulator>;
 	};
 
-	ext_dsi_bridge_display: qcom,dsi-display@19 {
+	dsi_lt8912_1080_dsi1_video_display: qcom,dsi-display@19 {
+		compatible = "qcom,dsi-display";
+		label = "dsi_lt8912_1080_dsi1_video_display";
+		qcom,display-type = "secondary";
+
+		qcom,dsi-ctrl = <&mdss_dsi1>;
+		qcom,dsi-phy = <&mdss_dsi_phy1>;
+		clocks = <&mdss_dsi1_pll BYTECLK_MUX_1_CLK>,
+			<&mdss_dsi1_pll PCLK_MUX_1_CLK>;
+		clock-names = "mux_byte_clk", "mux_pixel_clk";
+
+		pinctrl-names = "panel_active", "panel_suspend";
+		pinctrl-0 = <&sde_dsi1_active>;
+		pinctrl-1 = <&sde_dsi1_suspend>;
+
+		qcom,dsi-panel = <&dsi_lt8912_1080_dsi1_video>;
+		vddio-supply = <&pm8998_l14>;
+	};
+
+	dsi_innolux_td4328_1080p_cmd_display: qcom,dsi-display@20 {
+		compatible = "qcom,dsi-display";
+		label = "dsi_innolux_td4328_1080p_cmd_display";
+		qcom,display-type = "primary";
+
+		qcom,dsi-ctrl = <&mdss_dsi0>;
+		qcom,dsi-phy = <&mdss_dsi_phy0>;
+		clocks = <&mdss_dsi0_pll BYTECLK_MUX_0_CLK>,
+			<&mdss_dsi0_pll PCLK_MUX_0_CLK>;
+		clock-names = "mux_byte_clk", "mux_pixel_clk";
+
+		pinctrl-names = "panel_active", "panel_suspend";
+		pinctrl-0 = <&sde_dsi_active &sde_te_active>;
+		pinctrl-1 = <&sde_dsi_suspend &sde_te_suspend>;
+		qcom,5v-boost-gpio = <&tlmm 120 0>;
+		qcom,platform-mipi-mode-oe = <&tlmm 50 0>;
+		qcom,platform-reset-gpio = <&tlmm 6 0>;
+		qcom,platform-te-gpio = <&tlmm 10 0>;
+
+		qcom,dsi-panel = <&dsi_innolux_td4328_1080p_cmd>;
+		vddio-supply = <&pm8998_l14>;
+		lab-supply = <&lab_regulator>;
+		ibb-supply = <&ibb_regulator>;
+	};
+
+	ext_dsi_bridge_display: qcom,dsi-display@21 {
 		compatible = "qcom,dsi-display";
 		label = "ext_dsi_bridge_display";
 		qcom,display-type = "primary";
@@ -929,6 +975,35 @@
 				08 05 03 04 00];
 			qcom,display-topology = <2 0 2>,
 				<1 0 2>;
+			qcom,default-topology-index = <0>;
+		};
+	};
+};
+
+&dsi_innolux_td4328_1080p_cmd {
+	qcom,mdss-dsi-t-clk-post = <0x0E>;
+	qcom,mdss-dsi-t-clk-pre = <0x36>;
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [00 21 08 08 25 23 08
+				08 09 02 04 00];
+			qcom,mdss-dsi-panel-clockrate = <957274560>;
+			qcom,display-topology = <1 0 1>;
+			qcom,default-topology-index = <0>;
+			qcom,mdss-dsi-panel-jitter = <0x10 0xa>;
+		};
+	};
+};
+
+&dsi_lt8912_1080_dsi1_video {
+	qcom,mdss-dsi-t-clk-post = <0x0d>;  //1920x1080 60 4lane
+	qcom,mdss-dsi-t-clk-pre = <0x32>;   //1920x1080 60 4lane
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [00 1E 08 08 24 22 08 
+				08 08 02 04 00];
+			qcom,mdss-dsi-panel-clockrate = <893376000>;
+			qcom,display-topology = <1 0 1>;
 			qcom,default-topology-index = <0>;
 		};
 	};
