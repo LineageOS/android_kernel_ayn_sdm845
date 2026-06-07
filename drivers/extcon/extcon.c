@@ -905,6 +905,33 @@ out:
 }
 EXPORT_SYMBOL_GPL(extcon_get_extcon_dev);
 
+/*
+ * struct class_compat is opaque to public headers, but its layout is
+ * stable: { struct kobject *kobj; } (drivers/base/class.c). We piggy-back
+ * on this so other drivers can hang legacy /sys/class/switch/<name>
+ * kobjects under the same compat tree extcon already creates.
+ */
+struct extcon_class_compat_layout {
+	struct kobject *kobj;
+};
+
+/**
+ * extcon_get_compat_switch_kobj() - return the kobject backing the
+ * compatibility /sys/class/switch/ tree, or NULL if it is not active.
+ *
+ * Drivers that need to expose legacy /sys/class/switch/<name> nodes
+ * (e.g. the AOSP "hdmi_audio" switch consumed by WiredAccessoryManager)
+ * can use this to attach their own kobjects without colliding with the
+ * class_compat_register("switch") that extcon already performs.
+ */
+struct kobject *extcon_get_compat_switch_kobj(void)
+{
+	if (!switch_class)
+		return NULL;
+	return ((struct extcon_class_compat_layout *)switch_class)->kobj;
+}
+EXPORT_SYMBOL_GPL(extcon_get_compat_switch_kobj);
+
 /**
  * extcon_register_notifier() - Register a notifiee to get notified by
  *				any attach status changes from the extcon.

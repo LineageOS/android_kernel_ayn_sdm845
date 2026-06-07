@@ -237,6 +237,14 @@ extern void devm_extcon_dev_unregister(struct device *dev,
 				       struct extcon_dev *edev);
 extern struct extcon_dev *extcon_get_extcon_dev(const char *extcon_name);
 
+#if defined(CONFIG_ANDROID)
+extern struct kobject *extcon_get_compat_switch_kobj(void);
+#else
+static inline struct kobject *extcon_get_compat_switch_kobj(void)
+{
+	return NULL;
+}
+#endif
 /*
  * Following APIs control the memory of extcon device.
  */
