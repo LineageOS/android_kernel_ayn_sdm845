@@ -48,6 +48,10 @@
 	};
 };
 
+&dsi_lt8912_1080_dsi1_video_display {
+	qcom,dsi-display-active;
+};
+
 &qupv3_se5_i2c {
 	synaptics@70 {
 		synaptics,swap-axes;
