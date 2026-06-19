@@ -41,6 +41,9 @@
 
 static struct dp_display *g_dp_display;
 #define HPD_STRING_SIZE 30
+#define DP_PULL_OUT	0
+#define DP_PULL_IN	1
+#define DP_UNUSED	2
 
 struct dp_hdcp {
 	void *data;
@@ -470,12 +473,24 @@ static void dp_display_post_open(struct dp_display *dp_display)
 		dp_display->post_open = NULL;
 }
 
+int dp_display_connected = DP_UNUSED;
+EXPORT_SYMBOL(dp_display_connected);
+extern int dp_state;
 static int dp_display_send_hpd_notification(struct dp_display_private *dp,
 		bool hpd)
 {
 	int ret = 0;
 
 	dp->dp_display.is_connected = hpd;
+
+	if (dp->dp_display.is_connected){
+		dp_display_connected = DP_PULL_IN;
+		printk("<3>""oncethings dp driver connect:%d",dp_display_connected);
+	}
+	else{
+		dp_display_connected = DP_PULL_OUT;
+		printk("<3>""oncethings dp driver connect:%d",dp_display_connected);
+	}
 
 	if (!dp_display_framework_ready(dp)) {
 		pr_err("%s: dp display framework not ready\n", __func__);
@@ -524,7 +539,7 @@ static int dp_display_process_hpd_high(struct dp_display_private *dp)
 		 * ETIMEDOUT --> cable may have been removed
 		 * ENOTCONN --> no downstream device connected
 		 */
-		if (rc == -ETIMEDOUT || rc == -ENOTCONN)
+		if (rc == -ETIMEDOUT || rc == -ENOTCONN || rc == -EINVAL)
 			goto end;
 		else
 			goto notify;
@@ -737,6 +752,11 @@ static void dp_display_attention_work(struct work_struct *work)
 	struct dp_display_private *dp = container_of(work,
 			struct dp_display_private, attention_work);
 
+		if (!dp->core_initialized)
+			return;
+
+		dp->link->process_request(dp->link);
+
 	if (dp_display_is_hdcp_enabled(dp) && dp->hdcp.ops->cp_irq) {
 		if (!dp->hdcp.ops->cp_irq(dp->hdcp.data))
 			return;
@@ -796,12 +816,14 @@ static int dp_display_usbpd_attention_cb(struct device *dev)
 		return -ENODEV;
 	}
 
+	pr_err("%s:hpd_irq=%d hpd_high=%d power_on=%d\n",__func__, dp->usbpd->hpd_irq, dp->usbpd->hpd_high, dp->power_on);
+
 	if (dp->usbpd->hpd_high && dp->usbpd->hpd_irq)
 		drm_dp_cec_irq(dp->aux->drm_aux);
 
 	if (dp->usbpd->hpd_irq && dp->usbpd->hpd_high &&
 	    dp->power_on) {
-		dp->link->process_request(dp->link);
+		//dp->link->process_request(dp->link);
 		queue_work(dp->wq, &dp->attention_work);
 	} else if (dp->usbpd->hpd_high) {
 		queue_work(dp->wq, &dp->connect_work);
@@ -1034,6 +1056,7 @@ static void dp_display_post_init(struct dp_display *dp_display)
 	dp_display_initialize_hdcp(dp);
 
 	dp_display->post_init = NULL;
+	//dp_display->post_open = NULL;
 end:
 	pr_debug("%s\n", rc ? "failed" : "success");
 }
@@ -1672,4 +1695,3 @@ static void __exit dp_display_cleanup(void)
 	platform_driver_unregister(&dp_display_driver);
 }
 module_exit(dp_display_cleanup);
-

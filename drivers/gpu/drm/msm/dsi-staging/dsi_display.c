@@ -884,7 +884,7 @@ static void _dsi_display_continuous_clk_ctrl(struct dsi_display *display,
 	int i;
 	struct dsi_display_ctrl *ctrl;
 
-	if (!display || !display->panel->host_config.force_hs_clk_lane)
+	if (!display)
 		return;
 
 	for (i = 0; i < display->ctrl_count; i++) {
@@ -3119,7 +3119,7 @@ int dsi_pre_clkoff_cb(void *priv,
 		 * If continuous clock is enabled then disable it
 		 * before entering into ULPS Mode.
 		 */
-		if (display->panel->host_config.force_hs_clk_lane)
+		//if (display->panel->host_config.force_hs_clk_lane)
 			_dsi_display_continuous_clk_ctrl(display, false);
 		/*
 		 * If ULPS feature is enabled, enter ULPS first.
@@ -3253,7 +3253,7 @@ int dsi_post_clkon_cb(void *priv,
 			}
 		}
 
-		if (display->panel->host_config.force_hs_clk_lane)
+		//if (display->panel->host_config.force_hs_clk_lane)
 			_dsi_display_continuous_clk_ctrl(display, true);
 	}
 
@@ -3573,7 +3573,7 @@ static int dsi_display_res_init(struct dsi_display *display)
 	rc = dsi_display_clocks_init(display);
 	if (rc) {
 		pr_err("Failed to parse clock data, rc=%d\n", rc);
-		goto error_ctrl_put;
+		//goto error_ctrl_put;
 	}
 
 	return 0;
@@ -3854,7 +3854,7 @@ static void _dsi_display_calc_pipe_delay(struct dsi_display *display,
 			 hr_bit_to_esc_ratio);
 
 	delay->pipe_delay2 = 0;
-	if (display->panel->host_config.force_hs_clk_lane)
+	//if (display->panel->host_config.force_hs_clk_lane)
 		delay->pipe_delay2 = (6 / byte_to_esc_ratio) +
 			((((cfg->timing.lane_v3[1] >> 1) + 1) +
 			  ((cfg->timing.lane_v3[4] >> 1) + 1)) /

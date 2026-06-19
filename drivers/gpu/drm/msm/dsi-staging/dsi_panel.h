@@ -111,6 +111,10 @@ struct dsi_backlight_config {
 	/* PWM params */
 	bool pwm_pmi_control;
 	u32 pwm_pmic_bank;
+	//zhounengwen@163.com begin
+	struct pwm_device *pwm_bl;
+	bool pwm_enabled;
+	//zhounengwen@163.com end
 	u32 pwm_period_usecs;
 	int pwm_gpio;
 
@@ -130,6 +134,9 @@ struct dsi_panel_reset_config {
 
 	int reset_gpio;
 	int disp_en_gpio;
+	int mipi_mode_sel;
+	int mipi_mode_oe;
+	int mipi_vdd;
 	int lcd_mode_sel_gpio;
 	u32 mode_sel_state;
 };

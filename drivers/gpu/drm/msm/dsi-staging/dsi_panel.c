@@ -20,6 +20,10 @@
 #include <video/mipi_display.h>
 #include <linux/firmware.h>
 
+//zhounengwen@163.com begin
+#include <linux/pwm.h>
+//zhounengwen@163.com end
+
 #include "dsi_panel.h"
 #include "dsi_ctrl_hw.h"
 
@@ -42,6 +46,8 @@
 #define DEFAULT_PANEL_JITTER_ARRAY_SIZE		2
 #define MAX_PANEL_JITTER		10
 #define DEFAULT_PANEL_PREFILL_LINES	25
+
+extern int en_backlight;
 
 enum dsi_dsc_ratio_type {
 	DSC_8BPC_8BPP,
@@ -358,7 +364,7 @@ static int dsi_panel_gpio_request(struct dsi_panel *panel)
 		rc = gpio_request(r_config->reset_gpio, "reset_gpio");
 		if (rc) {
 			pr_err("request for reset_gpio failed, rc=%d\n", rc);
-			goto error;
+			//goto error;
 		}
 	}
 
@@ -382,14 +388,38 @@ static int dsi_panel_gpio_request(struct dsi_panel *panel)
 		rc = gpio_request(r_config->lcd_mode_sel_gpio, "mode_gpio");
 		if (rc) {
 			pr_err("request for mode_gpio failed, rc=%d\n", rc);
-			goto error_release_mode_sel;
+			//goto error_release_mode_sel;
+		}
+	}
+
+	if (gpio_is_valid(r_config->mipi_mode_sel)) {
+		rc = gpio_request(r_config->mipi_mode_sel, "mipi_mode_sel");
+		if (rc) {
+			pr_err("request for mipi_mode_sel failed, rc=%d,quectel ignore\n", rc);
+			//goto error_release_reset;
+		}
+	}
+
+	if (gpio_is_valid(r_config->mipi_mode_oe)) {
+		rc = gpio_request(r_config->mipi_mode_oe, "mipi_mode_oe");
+		if (rc) {
+			pr_err("request for mipi_mode_oe failed, rc=%d\n", rc);
+			//goto error_release_disp_en;
+		}
+	}
+
+	if (gpio_is_valid(r_config->mipi_vdd)) {
+		rc = gpio_request(r_config->mipi_vdd, "mipi_vdd");
+		if (rc) {
+			pr_err("request for mipi_vdd failed, rc=%d\n", rc);
+			//goto error_release_mode_sel;
 		}
 	}
 
 	goto error;
-error_release_mode_sel:
-	if (gpio_is_valid(panel->bl_config.en_gpio))
-		gpio_free(panel->bl_config.en_gpio);
+//error_release_mode_sel:
+//	if (gpio_is_valid(panel->bl_config.en_gpio))
+//		gpio_free(panel->bl_config.en_gpio);
 error_release_disp_en:
 	if (gpio_is_valid(r_config->disp_en_gpio))
 		gpio_free(r_config->disp_en_gpio);
@@ -445,6 +475,14 @@ static int dsi_panel_gpio_release(struct dsi_panel *panel)
 	if (gpio_is_valid(panel->reset_config.lcd_mode_sel_gpio))
 		gpio_free(panel->reset_config.lcd_mode_sel_gpio);
 
+	if (gpio_is_valid(r_config->mipi_mode_sel))
+		gpio_free(r_config->mipi_mode_sel);
+
+	if (gpio_is_valid(r_config->mipi_mode_oe))
+		gpio_free(r_config->mipi_mode_oe);
+
+	if (gpio_is_valid(panel->reset_config.mipi_vdd))
+		gpio_free(panel->reset_config.mipi_vdd);
 	return rc;
 }
 
@@ -487,18 +525,21 @@ static int dsi_panel_reset(struct dsi_panel *panel)
 	}
 
 	if (r_config->count) {
+	if (gpio_is_valid(r_config->reset_gpio)) {
 		rc = gpio_direction_output(r_config->reset_gpio,
 			r_config->sequence[0].level);
 		if (rc) {
 			pr_err("unable to set dir for rst gpio rc=%d\n", rc);
 			goto exit;
 		}
+		}
 	}
 
 	for (i = 0; i < r_config->count; i++) {
+	if (gpio_is_valid(r_config->reset_gpio)) {
 		gpio_set_value(r_config->reset_gpio,
 			       r_config->sequence[i].level);
-
+		}
 
 		if (r_config->sequence[i].sleep_ms)
 			usleep_range(r_config->sequence[i].sleep_ms * 1000,
@@ -656,13 +697,16 @@ static void dsi_panel_exd_disable(struct dsi_panel *panel)
 		gpio_set_value(e_config->switch_power, 0);
 }
 
+extern int ayn_panel_power_on(void);
+extern int ayn_panel_power_off(void);
+extern int synaptics_rmi4_disable_irq(bool disable);//wufei:Fixed the bug of probabilistic interruption after TP power-off
 static int dsi_panel_power_on(struct dsi_panel *panel)
 {
 	int rc = 0;
 
 	rc = dsi_pwr_enable_regulator(&panel->power_info, true);
 	if (rc) {
-		pr_err("[%s] failed to enable vregs, rc=%d\n", panel->name, rc);
+		pr_err("[%s] failed to enable vregs, rc=%d,lt8912B ignore!!!\n", panel->name, rc);
 		goto exit;
 	}
 
@@ -671,6 +715,20 @@ static int dsi_panel_power_on(struct dsi_panel *panel)
 		pr_err("[%s] failed to set pinctrl, rc=%d\n", panel->name, rc);
 		goto error_disable_vregs;
 	}
+
+	if (gpio_is_valid(panel->reset_config.mipi_mode_sel)){
+		gpio_direction_output(
+			panel->reset_config.mipi_mode_sel, 1);
+	}
+
+	if (gpio_is_valid(panel->reset_config.mipi_mode_oe)){
+		gpio_direction_output(
+			panel->reset_config.mipi_mode_oe, 0);
+	}
+
+	if (gpio_is_valid(panel->reset_config.mipi_vdd))
+				gpio_direction_output(
+			panel->reset_config.mipi_vdd, 1);
 
 	rc = dsi_panel_reset(panel);
 	if (rc) {
@@ -684,6 +742,14 @@ static int dsi_panel_power_on(struct dsi_panel *panel)
 		dsi_panel_exd_disable(panel);
 		goto error_disable_gpio;
 	}
+
+	if (gpio_is_valid(88)){
+		gpio_direction_output(88, 1);
+		gpio_set_value(88, 1);
+		pr_err("[kevin]gpio_set_value 88 = 1\n");
+		ayn_panel_power_on();
+	}
+	synaptics_rmi4_disable_irq(false);//wufei:Fixed the bug of probabilistic interruption after TP power-off
 
 	goto exit;
 
@@ -700,6 +766,7 @@ error_disable_vregs:
 	(void)dsi_pwr_enable_regulator(&panel->power_info, false);
 
 exit:
+	rc = 0;
 	return rc;
 }
 
@@ -707,7 +774,14 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 {
 	int rc = 0;
 
+	synaptics_rmi4_disable_irq(true);//wufei:Fixed the bug of probabilistic interruption after TP power-off
+	ayn_panel_power_off();
 	dsi_panel_exd_disable(panel);
+	if (gpio_is_valid(88)){
+		gpio_direction_output(88, 0);
+		gpio_set_value(88, 0);
+		pr_err("[kevin]gpio_set_value 88 = 0\n");
+	}
 
 	if (gpio_is_valid(panel->reset_config.disp_en_gpio))
 		gpio_set_value(panel->reset_config.disp_en_gpio, 0);
@@ -726,8 +800,8 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 
 	rc = dsi_pwr_enable_regulator(&panel->power_info, false);
 	if (rc)
-		pr_err("[%s] failed to enable vregs, rc=%d\n", panel->name, rc);
-
+		pr_err("[%s] failed to enable vregs, rc=%d,lt8912B ignore!!!\n", panel->name, rc);
+	rc = 0;
 	return rc;
 }
 static int dsi_panel_tx_cmd_set(struct dsi_panel *panel,
@@ -884,16 +958,76 @@ static int dsi_panel_update_backlight(struct dsi_panel *panel,
 	return rc;
 }
 
+//zhounengwen@163.com begin
+static int dsi_panel_update_pwm_backlight(struct dsi_panel *panel, u32 bl_lvl)
+{
+	int rc = 0;
+	u32 duty = 0;
+	u32 period_ns = 0;
+	struct dsi_backlight_config *bl;
+
+	if (!panel) {
+		pr_err("Invalid Params\n");
+		return -EINVAL;
+	}
+
+	bl = &panel->bl_config;
+	if (!bl->pwm_bl) {
+		pr_err("pwm device not found\n");
+		return -EINVAL;
+	}
+
+	period_ns = bl->pwm_period_usecs * NSEC_PER_USEC;
+	duty = bl_lvl * period_ns;
+	duty /= bl->bl_max_level;
+
+	rc = pwm_config(bl->pwm_bl, duty, period_ns);
+	if (rc) {
+		pr_err("[%s] failed to change pwm config, rc=%d\n", panel->name,
+			rc);
+		goto error;
+	}
+
+	if (bl_lvl == 0 && bl->pwm_enabled) {
+		pwm_disable(bl->pwm_bl);
+		bl->pwm_enabled = false;
+		return 0;
+	}
+
+	if (!bl->pwm_enabled) {
+		rc = pwm_enable(bl->pwm_bl);
+		if (rc) {
+			pr_err("[%s] failed to enable pwm, rc=%d\n", panel->name,
+				rc);
+			goto error;
+		}
+
+		bl->pwm_enabled = true;
+	}
+
+error:
+	return rc;
+}
+//zhounengwen@163.com end
 int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 {
 	int rc = 0;
 	struct dsi_backlight_config *bl = &panel->bl_config;
+
+	if(en_backlight != 1){
+		return 0;
+	}
 
 	if (panel->type == EXT_BRIDGE)
 		return 0;
 
 	pr_debug("backlight type:%d lvl:%d\n", bl->type, bl_lvl);
 	switch (bl->type) {
+	//zhounengwen@163.com begin
+	case DSI_BACKLIGHT_PWM:
+		dsi_panel_update_pwm_backlight(panel, bl_lvl);
+	break;
+	//zhounengwen@163.com end
 	case DSI_BACKLIGHT_WLED:
 		led_trigger_event(bl->wled, bl_lvl);
 		break;
@@ -908,12 +1042,34 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	return rc;
 }
 
+//zhounengwen@163.com begin
+static int dsi_panel_pwm_register(struct dsi_panel *panel)
+{
+	int rc = 0;
+	struct dsi_backlight_config *bl = &panel->bl_config;
+
+	bl->pwm_bl = devm_of_pwm_get(panel->parent, panel->panel_of_node, NULL);
+	if (IS_ERR_OR_NULL(bl->pwm_bl)) {
+		rc = PTR_ERR(bl->pwm_bl);
+		pr_err("[%s] failed to request pwm, rc=%d\n", panel->name,
+			rc);
+		return rc;
+	}
+
+	return 0;
+}
+//zhounengwen@163.com end
 static int dsi_panel_bl_register(struct dsi_panel *panel)
 {
 	int rc = 0;
 	struct dsi_backlight_config *bl = &panel->bl_config;
 
 	switch (bl->type) {
+	//zhounengwen@163.com begin
+	case DSI_BACKLIGHT_PWM:
+		rc = dsi_panel_pwm_register(panel);
+	break;
+	//zhounengwen@163.com end
 	case DSI_BACKLIGHT_WLED:
 		rc = dsi_panel_led_bl_register(panel, bl);
 		break;
@@ -926,15 +1082,28 @@ static int dsi_panel_bl_register(struct dsi_panel *panel)
 	}
 
 error:
+	rc = 0;
 	return rc;
 }
 
+//zhounengwen@163.com begin
+static void dsi_panel_pwm_unregister(struct dsi_panel *panel)
+{
+	struct dsi_backlight_config *bl = &panel->bl_config;
+	devm_pwm_put(panel->parent, bl->pwm_bl);
+}
+//zhounengwen@163.com end
 static int dsi_panel_bl_unregister(struct dsi_panel *panel)
 {
 	int rc = 0;
 	struct dsi_backlight_config *bl = &panel->bl_config;
 
 	switch (bl->type) {
+	//zhounengwen@163.com begin
+	case DSI_BACKLIGHT_PWM:
+		dsi_panel_pwm_unregister(panel);
+	break;
+	//zhounengwen@163.com end
 	case DSI_BACKLIGHT_WLED:
 		led_trigger_unregister_simple(bl->wled);
 		break;
@@ -1316,6 +1485,7 @@ static int dsi_panel_parse_misc_host_config(struct dsi_host_common_cfg *host,
 
 	host->force_hs_clk_lane = of_property_read_bool(of_node,
 					"qcom,mdss-dsi-force-clock-lane-hs");
+	pr_err("[kevin]host->force_hs_clk_lane = %d\n",host->force_hs_clk_lane);
 	return 0;
 }
 
@@ -2192,9 +2362,50 @@ static int dsi_panel_parse_gpios(struct dsi_panel *panel,
 					      "qcom,platform-reset-gpio",
 					      0);
 	if (!gpio_is_valid(panel->reset_config.reset_gpio)) {
-		pr_err("[%s] failed get reset gpio, rc=%d\n", panel->name, rc);
-		rc = -EINVAL;
-		goto error;
+		pr_err("[%s] failed get reset gpio, rc=%d,quec_ignore\n", panel->name, rc);
+		//rc = -EINVAL;
+		rc = 0;
+		//goto error;
+	}
+
+	panel->reset_config.reset_gpio = of_get_named_gpio(of_node,
+					      "qcom,platform-reset-gpio",
+					      0);
+	if (!gpio_is_valid(panel->reset_config.reset_gpio)) {
+		pr_err("[%s] failed get reset gpio, rc=%d,quec_ignore\n", panel->name, rc);
+		//rc = -EINVAL;
+		rc = 0;
+		//goto error;
+	}
+
+	panel->reset_config.mipi_mode_sel = of_get_named_gpio(of_node,
+					      "qcom,platform-mipi-mode-sel",
+					      0);
+	if (!gpio_is_valid(panel->reset_config.mipi_mode_sel)) {
+		pr_err("[%s] failed get mipi mode sel gpio, rc=%d,quec_ignore\n", panel->name, rc);
+		//rc = -EINVAL;
+		rc = 0;
+		//goto error;
+	}
+	
+	panel->reset_config.mipi_mode_oe = of_get_named_gpio(of_node,
+					      "qcom,platform-mipi-mode-oe",
+					      0);
+	if (!gpio_is_valid(panel->reset_config.mipi_mode_oe)) {
+		pr_err("[%s] failed get mipi_mode_oe gpio, rc=%d,quec_ignore\n", panel->name, rc);
+		//rc = -EINVAL;
+		rc = 0;
+		//goto error;
+	}
+	
+	panel->reset_config.mipi_vdd = of_get_named_gpio(of_node,
+					      "qcom,platform-mipi-vdd",
+					      0);
+	if (!gpio_is_valid(panel->reset_config.mipi_vdd)) {
+		pr_err("[%s] failed get mipi_vdd gpio, rc=%d,quec_ignore\n", panel->name, rc);
+		//rc = -EINVAL;
+		rc = 0;
+		//goto error;
 	}
 
 	panel->reset_config.disp_en_gpio = of_get_named_gpio(of_node,
@@ -2275,7 +2486,9 @@ static int dsi_panel_parse_bl_pwm_config(struct dsi_backlight_config *config,
 		pr_err("bl-pmic-bank-select is not defined, rc=%d\n", rc);
 		goto error;
 	}
-	config->pwm_period_usecs = val;
+	//zhounengwen@163.com begin
+	//config->pwm_period_usecs = val;
+	//zhounengwen@163.com end
 
 	config->pwm_pmi_control = of_property_read_bool(of_node,
 						"qcom,mdss-dsi-bl-pwm-pmi");
@@ -2289,6 +2502,16 @@ static int dsi_panel_parse_bl_pwm_config(struct dsi_backlight_config *config,
 		goto error;
 	}
 
+	//zhounengwen@163.com begin
+	rc = of_property_read_u32(of_node, "qcom,bl-pmic-pwm-period-usecs",
+ 				  &val);
+	if (rc){
+		pr_err("bl-pmic-pwm-period-usecs is not defined, rc=%d\n", rc);
+		goto error;
+	}
+	
+	config->pwm_period_usecs = val;
+	//zhounengwen@163.com end
 error:
 	return rc;
 }

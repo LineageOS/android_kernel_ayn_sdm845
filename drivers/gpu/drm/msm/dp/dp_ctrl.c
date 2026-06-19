@@ -900,7 +900,7 @@ static int dp_ctrl_link_train_1(struct dp_ctrl_private *ctrl)
 
 		if (ctrl->link->phy_params.v_level == DP_LINK_VOLTAGE_MAX) {
 			pr_err_ratelimited("max v_level reached\n");
-			ret = -EAGAIN;
+			//ret = -EAGAIN;
 			break;
 		}
 
@@ -1013,7 +1013,7 @@ static int dp_ctrl_link_training_2(struct dp_ctrl_private *ctrl)
 			break;
 
 		if (tries > maximum_retries) {
-			ret = -ETIMEDOUT;
+			//ret = -ETIMEDOUT;
 			break;
 		}
 		tries++;

@@ -2358,6 +2358,20 @@ int32_t qpnp_vadc_read(struct qpnp_vadc_chip *vadc,
 }
 EXPORT_SYMBOL(qpnp_vadc_read);
 
+struct qpnp_vadc_chip *odin_vadc;
+EXPORT_SYMBOL(odin_vadc);
+
+int32_t qpnp_vadc_irq_read(enum qpnp_vadc_channels channel,
+				struct qpnp_vadc_result *result)
+{
+	if (qpnp_vadc_is_valid(odin_vadc))
+		return -EPROBE_DEFER;
+
+	return qpnp_vadc_read(odin_vadc, channel, result);
+
+}
+EXPORT_SYMBOL(qpnp_vadc_irq_read);
+
 static void qpnp_vadc_lock(struct qpnp_vadc_chip *vadc)
 {
 	mutex_lock(&vadc->adc->adc_lock);
@@ -2658,6 +2672,130 @@ int32_t qpnp_vadc_end_channel_monitor(struct qpnp_vadc_chip *chip)
 }
 EXPORT_SYMBOL(qpnp_vadc_end_channel_monitor);
 
+int32_t qpnp_vadc_odin_read(enum qpnp_vadc_channels channel,
+				struct qpnp_vadc_result *result)
+{
+	int rc = 0, scale_type, amux_prescaling;
+	//u8 val = QPNP_VADC_CAL_DELAY_MEAS_SLOW;
+	//struct qpnp_adc_amux_properties amux_prop;
+	u8 conv_req = QPNP_VADC_HC1_CONV_REQ_START;
+	u8 read_reg[6][5] = {
+		{0x00, 0x00, 0x00, 0x00, 0x00},
+		{0x98, 0x38, 0x18, 0x71, 0x73},
+		{0x98, 0x38, 0x18, 0x71, 0x73},
+		{0x00, 0x00, 0x00, 0x00, 0x00},
+		{0x01, 0x00, 0x00, 0x00, 0x01},
+		{0x00, 0x00, 0x00, 0x00, 0x01},
+	};
+	u8 write_reg[6][5] = {
+		{0x20, 0x80, 0x13, 0x00, 0x80},
+		{0x20, 0x80, 0x14, 0x00, 0x80},
+		{0x20, 0x80, 0x97, 0x00, 0x80},
+		{0x20, 0x80, 0x16, 0x00, 0x80},
+		{0x20, 0x80, 0x12, 0x00, 0x80},
+		{0x20, 0x80, 0x15, 0x00, 0x80},
+	};
+	int channel_connvert[] = {6, 7, 10, 9, 5, 8};
+	int dt_index = channel_connvert[channel];
+
+	if (qpnp_vadc_is_valid(odin_vadc))
+		return -EPROBE_DEFER;
+
+	mutex_lock(&odin_vadc->adc->adc_lock);
+
+	rc = qpnp_vadc_read_reg(odin_vadc, QPNP_VADC_HC1_ADC_DIG_PARAM, read_reg[channel], 5);
+	if (rc < 0) {
+		pr_err("qpnp adc configure block read failed\n");
+		goto fail_unlock;
+	}
+
+	if (!odin_vadc->vadc_poll_eoc)
+		reinit_completion(&odin_vadc->adc->adc_rslt_completion);
+
+	rc = qpnp_vadc_write_reg(odin_vadc, QPNP_VADC_HC1_ADC_DIG_PARAM, write_reg[channel], 5);
+	if (rc < 0) {
+		pr_err("qpnp adc block register configure failed\n");
+		goto fail_unlock;
+	}
+
+	rc = qpnp_vadc_write_reg(odin_vadc, QPNP_VADC_HC1_CONV_REQ, &conv_req, 1);
+	if (rc < 0) {
+		pr_err("qpnp adc block register configure failed\n");
+		goto fail_unlock;
+	}
+
+	rc = qpnp_vadc_wait_for_eoc(odin_vadc);
+	if (rc < 0)
+		goto fail_unlock;
+
+	rc = qpnp_vadc_hc_read_data(odin_vadc, &result->adc_code);
+	if (rc) {
+		pr_err("qpnp vadc read adc code failed with %d\n", rc);
+		goto fail_unlock;
+	}
+
+	amux_prescaling =
+		odin_vadc->adc->adc_channels[dt_index].chan_path_prescaling;
+
+	if (amux_prescaling >= PATH_SCALING_NONE) {
+		rc = -EINVAL;
+		goto fail_unlock;
+	}
+
+	odin_vadc->adc->amux_prop->chan_prop->offset_gain_numerator =
+		qpnp_vadc_amux_scaling_ratio[amux_prescaling].num;
+	odin_vadc->adc->amux_prop->chan_prop->offset_gain_denominator =
+		 qpnp_vadc_amux_scaling_ratio[amux_prescaling].den;
+
+	scale_type = odin_vadc->adc->adc_channels[dt_index].adc_scale_fn;
+	if (scale_type >= SCALE_NONE) {
+		rc = -EBADF;
+		goto fail_unlock;
+	}
+
+	/* Note: Scaling functions for VADC_HC do not need offset/gain */
+	vadc_scale_fn[scale_type].chan(odin_vadc, result->adc_code,
+		odin_vadc->adc->adc_prop, odin_vadc->adc->amux_prop->chan_prop, result);
+
+	pr_debug("channel=0x%x, adc_code=0x%x adc_result=%lld\n",
+			channel, result->adc_code, result->physical);
+
+fail_unlock:
+	mutex_unlock(&odin_vadc->adc->adc_lock);
+
+	return rc;
+}
+EXPORT_SYMBOL(qpnp_vadc_odin_read);
+
+int32_t qpnp_vadc_odin_hc_read(enum qpnp_vadc_channels channel,
+				struct qpnp_vadc_result *result)
+{
+	if (qpnp_vadc_is_valid(odin_vadc))
+		return -EPROBE_DEFER;
+
+	return qpnp_vadc_hc_read(odin_vadc, channel, result);
+}
+EXPORT_SYMBOL(qpnp_vadc_odin_hc_read);
+
+int get_odin_adc(char *buf)
+{
+	struct qpnp_vadc_result result[6];
+	int i, rc = -1;
+
+	for (i = 0; i < 6; i++) {
+		rc = qpnp_vadc_odin_read(i, &result[i]);
+		if (rc) {
+			pr_err("VADC read error with %d\n", rc);
+			return 0;
+		}
+	}
+
+	return snprintf(buf, 64, "R:%lld R:%lld R:%lld R:%lld R:%lld R:%lld", 
+					result[0].physical, result[1].physical, result[2].physical,
+					result[3].physical, result[4].physical, result[5].physical);
+}
+EXPORT_SYMBOL(get_odin_adc);
+
 static ssize_t qpnp_adc_show(struct device *dev,
 			struct device_attribute *devattr, char *buf)
 {
@@ -2810,11 +2948,13 @@ static int qpnp_vadc_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
+	pr_err("mmmm qpnp_vadc_probe\n");
 	id = of_match_node(qpnp_vadc_match_table, node);
 	if (id == NULL) {
 		pr_err("qpnp_vadc_match of_node prop not present\n");
 		return -ENODEV;
 	}
+	pr_err("mmmm qpnp_vadc_probe2\n");
 
 	vadc = devm_kzalloc(&pdev->dev, sizeof(struct qpnp_vadc_chip) +
 		(sizeof(struct sensor_device_attribute) *
@@ -2823,6 +2963,8 @@ static int qpnp_vadc_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Unable to allocate memory\n");
 		return -ENOMEM;
 	}
+	odin_vadc = vadc;
+	pr_err("mmmm qpnp_vadc_probe3\n");
 
 	vadc->dev = &(pdev->dev);
 	adc_qpnp = devm_kzalloc(&pdev->dev, sizeof(struct qpnp_adc_drv),
@@ -2830,16 +2972,19 @@ static int qpnp_vadc_probe(struct platform_device *pdev)
 	if (!adc_qpnp)
 		return -ENOMEM;
 
+	pr_err("mmmm qpnp_vadc_probe4\n");
 	adc_qpnp->regmap = dev_get_regmap(pdev->dev.parent, NULL);
 	if (!adc_qpnp->regmap) {
 		dev_err(&pdev->dev, "Couldn't get parent's regmap\n");
 		return -EINVAL;
 	}
+	pr_err("mmmm qpnp_vadc_probe5\n");
 
 	vadc->state_copy = devm_kzalloc(&pdev->dev,
 			sizeof(struct qpnp_vadc_mode_state), GFP_KERNEL);
 	if (!vadc->state_copy)
 		return -ENOMEM;
+	pr_err("mmmm qpnp_vadc_probe6\n");
 
 	vadc->adc = adc_qpnp;
 	adc_thermal = devm_kzalloc(&pdev->dev,
@@ -2849,6 +2994,7 @@ static int qpnp_vadc_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Unable to allocate memory\n");
 		return -ENOMEM;
 	}
+	pr_err("mmmm qpnp_vadc_probe7\n");
 
 	revid_dev_node = of_parse_phandle(node, "qcom,pmic-revid", 0);
 	if (revid_dev_node) {
@@ -2865,6 +3011,7 @@ static int qpnp_vadc_probe(struct platform_device *pdev)
 		vadc->vadc_hc = true;
 		vadc->adc->adc_hc = true;
 	}
+	pr_err("mmmm qpnp_vadc_probe8\n");
 
 	rc = qpnp_adc_get_devicetree_data(pdev, vadc->adc);
 	if (rc) {
@@ -2872,18 +3019,21 @@ static int qpnp_vadc_probe(struct platform_device *pdev)
 		return rc;
 	}
 	mutex_init(&vadc->adc->adc_lock);
+	pr_err("mmmm qpnp_vadc_probe9\n");
 
 	rc = qpnp_vadc_init_hwmon(vadc, pdev);
 	if (rc) {
 		dev_err(&pdev->dev, "failed to initialize qpnp hwmon adc\n");
 		return rc;
 	}
+	pr_err("mmmm qpnp_vadc_probe10\n");	
 	vadc->vadc_hwmon = hwmon_device_register(&vadc->adc->pdev->dev);
 	rc = qpnp_vadc_init_thermal(vadc, pdev);
 	if (rc) {
 		dev_err(&pdev->dev, "failed to initialize qpnp thermal adc\n");
 		return rc;
 	}
+	pr_err("mmmm qpnp_vadc_probe11\n");	
 	vadc->vadc_init_calib = false;
 	vadc->max_channels_available = count_adc_channel_list;
 	rc = qpnp_vadc_read_reg(vadc, QPNP_INT_TEST_VAL, &fab_id, 1);
@@ -2893,6 +3043,7 @@ static int qpnp_vadc_probe(struct platform_device *pdev)
 	}
 	vadc->id = fab_id;
 	pr_debug("fab_id = %d\n", fab_id);
+	pr_err("mmmm qpnp_vadc_probe12\n");	
 
 	rc = qpnp_vadc_read_reg(vadc, QPNP_VADC_REVISION2,
 				&vadc->revision_dig_major, 1);
@@ -2900,6 +3051,7 @@ static int qpnp_vadc_probe(struct platform_device *pdev)
 		pr_err("qpnp adc dig_major rev read failed with %d\n", rc);
 		goto err_setup;
 	}
+	pr_err("mmmm qpnp_vadc_probe13\n");	
 
 	rc = qpnp_vadc_read_reg(vadc, QPNP_VADC_REVISION3,
 				&vadc->revision_ana_minor, 1);
@@ -2907,6 +3059,7 @@ static int qpnp_vadc_probe(struct platform_device *pdev)
 		pr_err("qpnp adc ana_minor rev read failed with %d\n", rc);
 		goto err_setup;
 	}
+	pr_err("mmmm qpnp_vadc_probe14\n");	
 
 	INIT_WORK(&vadc->trigger_completion_work, qpnp_vadc_work);
 
@@ -2915,6 +3068,7 @@ static int qpnp_vadc_probe(struct platform_device *pdev)
 
 	vadc->vadc_poll_eoc = of_property_read_bool(node,
 						"qcom,vadc-poll-eoc");
+	printk("vadc->vadc_poll_eoc:%d  vadc->vadc_hc:%d\n",vadc->vadc_poll_eoc,vadc->vadc_hc );
 	if (!vadc->vadc_poll_eoc) {
 		rc = devm_request_irq(&pdev->dev, vadc->adc->adc_irq_eoc,
 				qpnp_vadc_isr, IRQF_TRIGGER_RISING,
@@ -2928,6 +3082,7 @@ static int qpnp_vadc_probe(struct platform_device *pdev)
 		}
 	} else
 		device_init_wakeup(vadc->dev, 1);
+	pr_err("mmmm qpnp_vadc_probe15\n"); 
 
 	vadc->state_copy->vadc_meas_int_enable = of_property_read_bool(node,
 						"qcom,vadc-meas-int-mode");
@@ -2935,10 +3090,12 @@ static int qpnp_vadc_probe(struct platform_device *pdev)
 		vadc->adc->adc_high_thr_irq = platform_get_irq_byname(pdev,
 								      "high-thr-en-set");
 		if (vadc->adc->adc_high_thr_irq < 0) {
+			pr_err("mmmm qpnp_vadc_probe15.1 %d\n",vadc->adc->adc_high_thr_irq); 
 			pr_err("Invalid irq\n");
 			rc = -ENXIO;
 			goto err_setup;
 		}
+		pr_err("mmmm qpnp_vadc_probe16\n"); 
 
 		vadc->adc->adc_low_thr_irq = platform_get_irq_byname(pdev,
 								     "low-thr-en-set");
@@ -2947,6 +3104,7 @@ static int qpnp_vadc_probe(struct platform_device *pdev)
 			rc = -ENXIO;
 			goto err_setup;
 		}
+		pr_err("mmmm qpnp_vadc_probe17\n"); 
 
 		rc = devm_request_irq(&pdev->dev, vadc->adc->adc_high_thr_irq,
 					qpnp_vadc_high_thr_isr,
@@ -2957,6 +3115,7 @@ static int qpnp_vadc_probe(struct platform_device *pdev)
 		} else {
 			enable_irq_wake(vadc->adc->adc_high_thr_irq);
 		}
+		pr_err("mmmm qpnp_vadc_probe18\n"); 
 
 		rc = devm_request_irq(&pdev->dev, vadc->adc->adc_low_thr_irq,
 					qpnp_vadc_low_thr_isr,
@@ -2971,6 +3130,7 @@ static int qpnp_vadc_probe(struct platform_device *pdev)
 						qpnp_vadc_high_thr_fn);
 		INIT_WORK(&vadc->trigger_low_thr_work, qpnp_vadc_low_thr_fn);
 	}
+	pr_err("mmmm qpnp_vadc_probe19\n"); 
 
 	vadc->vadc_iadc_sync_lock = false;
 	dev_set_drvdata(&pdev->dev, vadc);
@@ -2979,6 +3139,7 @@ static int qpnp_vadc_probe(struct platform_device *pdev)
 	return 0;
 
 err_setup:
+	pr_err("mmmm qpnp_vadc_probe err_setup remove file\n"); 
 	for_each_child_of_node(node, child) {
 		device_remove_file(&pdev->dev, &vadc->sens_attr[i].dev_attr);
 		if (vadc->vadc_therm_chan[i].thermal_node)

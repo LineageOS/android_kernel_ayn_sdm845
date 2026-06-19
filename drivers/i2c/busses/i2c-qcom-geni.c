@@ -763,7 +763,7 @@ static int geni_i2c_xfer(struct i2c_adapter *adap,
 		}
 		ret = gi2c->err;
 		if (gi2c->err) {
-			dev_err(gi2c->dev, "i2c error :%d\n", gi2c->err);
+			//dev_err(gi2c->dev, "i2c error :%d\n", gi2c->err);
 			break;
 		}
 	}
@@ -893,6 +893,8 @@ static int geni_i2c_probe(struct platform_device *pdev)
 		dev_info(&pdev->dev,
 			"Bus frequency not specified, default to 400KHz.\n");
 		gi2c->i2c_rsc.clk_freq_out = KHz(400);
+	} else {
+		dev_info(&pdev->dev, "Bus frequency %d.\n", gi2c->i2c_rsc.clk_freq_out);
 	}
 
 	gi2c->autosuspend_disable = of_property_read_bool(pdev->dev.of_node,
